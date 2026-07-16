@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+config.toml
+*.log
+
+# scratch / dev screenshots and API sample dumps
+_*.png
+_*.jpg
+one-call-4.txt

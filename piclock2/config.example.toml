@@ -1,0 +1,47 @@
+[display]
+width = 1920
+height = 1080
+fullscreen = false   # set true for the Pi; false in dev on a desktop
+
+[mapbox]
+key = "pk.YOUR_MAPBOX_TOKEN"
+style = "mapbox/satellite-streets-v10"
+
+# Optional. Weather alerts work keyless via the US National Weather Service for
+# US locations. Set an OpenWeatherMap key here ONLY to also get alerts for
+# non-US locations (e.g. Budapest) — it requires the paid "One Call by Call"
+# subscription (One Call API 4.0) on the OWM account. Leave commented to stay keyless.
+# [openweathermap]
+# key = "YOUR_OWM_KEY"
+
+[clock]
+use_utc = false
+locale = ""          # empty = system default
+
+[[locations]]
+name = "Princeton, NJ"
+lat = 40.296919
+lng = -74.771514
+units = "imperial"   # imperial | metric
+radar_zoom = 8
+
+[[locations]]
+name = "Long Branch, NJ"
+lat = 40.30428
+lng = -73.99236
+units = "imperial"
+radar_zoom = 8
+
+[[locations]]
+name = "Budapest, HU"
+lat = 47.49835
+lng = 19.04045
+units = "metric"
+radar_zoom = 8
+
+[[locations]]
+name = "New York City"
+lat = 40.71427
+lng = -74.00597
+units = "imperial"
+radar_zoom = 8
