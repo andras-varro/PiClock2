@@ -29,11 +29,12 @@ from config import load_default
 from app_state import AppState
 from ui.location_column import LocationColumn
 from ui.clock_face import ClockFace
-from ui.hourly_strip import HourlyStrip
+from ui.forecast_panel import ForecastPanel
 from ui.radar_fullscreen import RadarOverlay
 from ui.alert_banner import AlertBanner
 from ui.alert_overlay import AlertOverlay
 from weather.open_meteo import fetch as fetch_weather
+from weather.air_quality import fetch_air_quality
 from weather.alerts import fetch_alerts
 
 
@@ -47,14 +48,14 @@ WEATHER_MAX_RETRIES = 4
 
 
 class _WorkerSignals(QObject):
-    weather = pyqtSignal(int, object, object, float)  # index, current, hourly, when
+    weather = pyqtSignal(int, object, object, object, float)  # index, current, hourly, daily, when
     alerts = pyqtSignal(int, object)                   # index, [WeatherAlert]
     failed = pyqtSignal(int, str)
     finished = pyqtSignal(object)                      # the worker itself
 
 
 class WeatherWorker(QRunnable):
-    """Fetch one location's weather (+ alerts) off the GUI thread."""
+    """Fetch one location's weather (+ air quality + alerts) off the GUI thread."""
 
     def __init__(self, index, location, owm_key=""):
         super().__init__()
@@ -66,11 +67,18 @@ class WeatherWorker(QRunnable):
 
     def run(self):
         try:
-            current, hourly = fetch_weather(self.location)
+            current, hourly, daily = fetch_weather(self.location)
+            # Air quality is best-effort and merged in before we emit, so the
+            # UI models arrive AQI-complete. A slow/failed AQI API must never
+            # blank the weather or kill the worker.
+            try:
+                aq = fetch_air_quality(self.location)
+                _merge_air_quality(current, hourly, daily, aq)
+            except Exception:  # noqa: BLE001
+                pass
             # Emit weather first so display latency is unchanged by alerts.
-            self.signals.weather.emit(self.index, current, hourly, time.time())
-            # Alerts are best-effort: a slow/failed alert API must never blank
-            # the weather or kill the worker.
+            self.signals.weather.emit(
+                self.index, current, hourly, daily, time.time())
             try:
                 alerts = fetch_alerts(self.location, self.owm_key)
             except Exception:  # noqa: BLE001
@@ -80,6 +88,23 @@ class WeatherWorker(QRunnable):
             self.signals.failed.emit(self.index, repr(e))
         finally:
             self.signals.finished.emit(self)
+
+
+def _merge_air_quality(current, hourly, daily, aq):
+    """Stitch AQI (both scales) into the weather models by timestamp/date."""
+    if current is not None:
+        current.aqi_us = aq.current.get("us")
+        current.aqi_eu = aq.current.get("eu")
+    for h in hourly:
+        v = aq.hourly.get(h.time_iso)
+        if v:
+            h.aqi_us = v.get("us")
+            h.aqi_eu = v.get("eu")
+    for d in daily:
+        v = aq.daily.get(d.date)   # None for days beyond the AQI horizon (~7)
+        if v:
+            d.aqi_us = v.get("us")
+            d.aqi_eu = v.get("eu")
 
 
 class WeatherService(QObject):
@@ -115,9 +140,9 @@ class WeatherService(QObject):
         self._workers.append(w)
         self.pool.start(w)
 
-    def _on_weather(self, i, current, hourly, when):
+    def _on_weather(self, i, current, hourly, daily, when):
         self._retries.pop(i, None)
-        self.app_state.update_weather(i, current, hourly, when)
+        self.app_state.update_weather(i, current, hourly, daily, when)
 
     def _on_alerts(self, i, alerts):
         self.app_state.update_alerts(i, alerts)
@@ -151,19 +176,19 @@ class MainPage(QWidget):
 
         self.location_column = LocationColumn(app_state, cfg, parent=self)
         self.clock = ClockFace(ASSETS_DIR, app_state, parent=self)
-        self.hourly = HourlyStrip(app_state, parent=self)
+        self.forecast = ForecastPanel(app_state, parent=self)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.location_column, 0)
         layout.addWidget(self.clock, 1)
-        layout.addWidget(self.hourly, 0)
+        layout.addWidget(self.forecast, 0)
 
         # Fixed column widths; clock takes the rest. Sized for a 1920-wide
         # canvas, with large fonts for the RoomWizard VNC downscale.
         self.location_column.setFixedWidth(420)
-        self.hourly.setFixedWidth(470)
+        self.forecast.setFixedWidth(470)
 
 
 class MainWindow(QWidget):
@@ -211,7 +236,7 @@ class MainWindow(QWidget):
         # Span the center clock area only (between the side columns) so the
         # banner never covers the location cards or the hourly strip.
         lc = self.main_page.location_column.width() or 420
-        hr = self.main_page.hourly.width() or 470
+        hr = self.main_page.forecast.width() or 470
         w = max(240, self.width() - lc - hr)
         self.alert_banner.setGeometry(lc, 0, w, self.alert_banner.height())
         self.alert_banner.raise_()

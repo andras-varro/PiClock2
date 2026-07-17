@@ -38,6 +38,7 @@ class Config:
                 lng=float(l["lng"]),
                 units=str(l.get("units", "imperial")),
                 radar_zoom=int(l.get("radar_zoom", 8)),
+                aqi_scale=str(l.get("aqi_scale", "")),
             )
             for l in locs
         ]

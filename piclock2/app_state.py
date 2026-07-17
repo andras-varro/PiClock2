@@ -50,10 +50,11 @@ class AppState(QObject):
             self.location_changed.emit(i)
         self.location_selected.emit(i)
 
-    def update_weather(self, i: int, current, hourly, when):
+    def update_weather(self, i: int, current, hourly, daily, when):
         d = self.data[i]
         d.current = current
         d.hourly = hourly
+        d.daily = daily
         d.last_updated = when
         self.data_updated.emit(i)
 

@@ -4,7 +4,10 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout
 
-from models import wind_compass, severity_color, severity_text_color
+from models import (
+    wind_compass, severity_color, severity_text_color,
+    aqi_dot_html, aqi_value, aqi_scale_for,
+)
 
 ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -81,8 +84,11 @@ class LocationCard(QFrame):
         self.detail1.setObjectName("LocDetail")
         self.detail2 = QLabel("")     # Wind (+ pressure)
         self.detail2.setObjectName("LocDetail")
+        self.detail3 = QLabel("")     # AQI (colored dot + number)
+        self.detail3.setObjectName("LocDetail")
         self.detail1.setVisible(False)
         self.detail2.setVisible(False)
+        self.detail3.setVisible(False)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
@@ -91,6 +97,7 @@ class LocationCard(QFrame):
         outer.addWidget(self.alert_label)
         outer.addWidget(self.detail1)
         outer.addWidget(self.detail2)
+        outer.addWidget(self.detail3)
 
         self._apply_style()
 
@@ -148,6 +155,7 @@ class LocationCard(QFrame):
         self.detail1.setVisible(show)
         self.detail2.setVisible(show)
         if not show:
+            self.detail3.setVisible(False)
             return
         c = self._current
         spd_unit = "mph" if c.units == "imperial" else "km/h"
@@ -158,6 +166,14 @@ class LocationCard(QFrame):
         # past the card edge, and it's the least-important field.
         self.detail2.setText("Wind <b>{:.0f} {} {}</b>".format(
             c.wind_speed, spd_unit, wind_compass(c.wind_direction)).rstrip())
+        # AQI on its own line so it never crowds the wind line at the active font.
+        scale = aqi_scale_for(self.location)
+        dot = aqi_dot_html(aqi_value(c, scale), scale)
+        if dot:
+            self.detail3.setText("AQI " + dot)
+            self.detail3.setVisible(True)
+        else:
+            self.detail3.setVisible(False)
 
     def _apply_style(self):
         if self._active:

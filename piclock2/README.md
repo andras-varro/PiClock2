@@ -5,18 +5,24 @@ A from-scratch rewrite of [n0bel/PiClock](../README.md), aimed at:
 - **Python 3 + PyQt5** (apt-installable on Buster, easy port to Qt6 later)
 - **Working radar** via rainviewer's current API
 - **True hourly forecast** via Open-Meteo (no API key, no rate-limit worries)
+- **10-day daily forecast** and **Air Quality (AQI)**, also from Open-Meteo
 - **Multi-location**: a column of location cards; tap to switch active location
+- **Weather alerts**: keyless NWS (US) + optional OpenWeatherMap (non-US)
 - **Compact layout** suitable for VNC viewers (RoomWizard 800×480, iPad)
 
 See [PLAN.md](PLAN.md) for the full design and implementation phases.
 
-## Phase 1 (current)
+## Features
 
-Skeleton with:
-- Centered analog clock with date arc'd inside top of dial and sun/moon arc'd inside bottom.
-- Left column of (currently placeholder) location cards.
-- Right column of (currently placeholder) hourly forecast rows.
-- Phase 2 will hook up Open-Meteo. Phase 3 will hook up rainviewer.
+- Centered analog clock with the date arc'd inside the top of the dial and
+  sun/moon arc'd inside the bottom, for the active location.
+- Left column: location cards (active one shows feels-like, humidity, wind, and
+  AQI) and a live radar below.
+- Right column: a **Hourly | 10-Day** tabbed forecast. Hourly starts at the
+  **next** hour; both views show AQI as a colored dot + number.
+- AQI scale is per-region: **US AQI** for imperial locations, **European AQI**
+  for metric ones (override with `aqi_scale` per location). AQI only forecasts
+  ~7 days, so the last few 10-day rows show no AQI.
 
 ## Install (Raspberry Pi Buster)
 
@@ -55,17 +61,41 @@ Set `fullscreen = true` in `config.toml` for the Pi; keep `false` on a desktop.
 
 ```
 ┌─────────────────┬──────────────────────────┬──────────────────┐
-│  Location card  │                          │  now      ...    │
-│  Location card  │      BIG ANALOG          │  +1h      ...    │
-│  Location card  │       CLOCK              │  +2h      ...    │
-│                 │   ◜ date arc top ◝       │  +3h      ...    │
+│  Location card  │                          │ [Hourly] 10-Day  │
+│  Location card  │      BIG ANALOG          │  +1h  ● ...      │
+│  Location card  │       CLOCK              │  +2h  ● ...      │
+│  (active: AQI)  │   ◜ date arc top ◝       │  +3h  ● ...      │
 │                 │   ◟ sun/moon bot ◞       │  ...             │
-│ ┌─────────────┐ │                          │  +11h     ...    │
-│ │  RADAR      │ │                          │                  │
-│ │  280×280    │ │                          │                  │
+│ ┌─────────────┐ │                          │  +12h ● ...      │
+│ │  RADAR      │ │                          │  (tap 10-Day for │
+│ │  280×280    │ │                          │   the daily view)│
 │ └─────────────┘ │                          │                  │
 └─────────────────┴──────────────────────────┴──────────────────┘
 ```
+
+## Deploy to the Pi
+
+`deploy.sh` rsyncs the working tree to the Pi (excluding `config.toml`, logs,
+caches, and dev scratch), so your on-device `config.toml` (with the Mapbox key)
+is never overwritten:
+
+```bash
+./deploy.sh                       # defaults to pi@192.168.50.56:/home/pi/piclock2
+./deploy.sh pi@otherhost:/path    # override target
+```
+
+## Autostart on boot
+
+Install `piclock2.desktop` into the Pi's autostart directory so the LXDE
+session launches the clock via `startup.sh`:
+
+```bash
+mkdir -p ~/.config/autostart
+cp ~/piclock2/piclock2.desktop ~/.config/autostart/piclock2.desktop
+```
+
+To cut over from the old Python-2 PiClock, remove its autostart entry
+(`~/.config/autostart/PiClock.desktop`) so only piclock2 starts, then reboot.
 
 ## License
 

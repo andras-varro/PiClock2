@@ -24,6 +24,8 @@ lat = 40.296919
 lng = -74.771514
 units = "imperial"   # imperial | metric
 radar_zoom = 8
+# aqi_scale = "us"   # optional: "us" | "european". Default derives from units
+                     # (imperial -> US AQI, metric -> European AQI).
 
 [[locations]]
 name = "Long Branch, NJ"

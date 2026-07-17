@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=PiClock 2
+Comment=Python 3 / PyQt5 clock + weather + radar
+Exec=/bin/sh -c "/bin/sh $HOME/piclock2/startup.sh -m 15"
+Terminal=false
+X-GNOME-Autostart-enabled=true

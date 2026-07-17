@@ -1,7 +1,7 @@
 """
 Open-Meteo client.
 
-One public function: `fetch(location) -> (CurrentConditions, [HourlyForecast])`.
+One public function: `fetch(location) -> (CurrentConditions, [HourlyForecast], [DailyForecast])`.
 
 Open-Meteo is free, key-less, and has no rate limit for hobby use. We request
 both `current` and `hourly` blocks in one call, with units driven by the
@@ -13,11 +13,11 @@ This runs on a QThreadPool worker thread (see main.WeatherService) and uses the
 blocking `requests` library — never call it from the GUI thread.
 """
 
-from datetime import datetime
+from datetime import datetime, date
 
 import requests
 
-from models import CurrentConditions, HourlyForecast
+from models import CurrentConditions, HourlyForecast, DailyForecast
 from weather.wmo_codes import icon_for, description_for
 
 API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -29,6 +29,10 @@ _CURRENT_FIELDS = (
 )
 _HOURLY_FIELDS = (
     "temperature_2m,weather_code,precipitation_probability,precipitation,is_day"
+)
+_DAILY_FIELDS = (
+    "weather_code,temperature_2m_max,temperature_2m_min,"
+    "precipitation_probability_max"
 )
 
 # Per-unit-system query params.
@@ -46,13 +50,14 @@ _UNIT_PARAMS = {
 }
 
 N_HOURLY = 12
+N_DAILY = 10
 
 
 def fetch(location, timeout=20):
-    """Fetch current + 12h hourly forecast for a Location.
+    """Fetch current conditions + 12h hourly + 10-day daily for a Location.
 
-    Returns (CurrentConditions, [HourlyForecast]). Raises on network/HTTP
-    errors; the caller (worker) catches and keeps last-good data.
+    Returns (CurrentConditions, [HourlyForecast], [DailyForecast]). Raises on
+    network/HTTP errors; the caller (worker) catches and keeps last-good data.
     """
     units = location.units if location.units in _UNIT_PARAMS else "imperial"
     params = {
@@ -60,8 +65,9 @@ def fetch(location, timeout=20):
         "longitude": location.lng,
         "current": _CURRENT_FIELDS,
         "hourly": _HOURLY_FIELDS,
+        "daily": _DAILY_FIELDS,
         "timezone": "auto",
-        "forecast_days": 2,
+        "forecast_days": N_DAILY,
     }
     params.update(_UNIT_PARAMS[units])
 
@@ -69,7 +75,11 @@ def fetch(location, timeout=20):
     resp.raise_for_status()
     data = resp.json()
 
-    return _parse_current(data, units), _parse_hourly(data, units)
+    return (
+        _parse_current(data, units),
+        _parse_hourly(data, units),
+        _parse_daily(data, units),
+    )
 
 
 def _parse_current(data, units):
@@ -103,7 +113,9 @@ def _parse_hourly(data, units, count=N_HOURLY):
     precs = h.get("precipitation") or []
     is_days = h.get("is_day") or []
 
-    start = _current_hour_index(data, times)
+    # Start at the NEXT hour: the current hour's remaining minutes are already
+    # covered by the "current conditions" card, so the strip looks ahead.
+    start = _current_hour_index(data, times) + 1
     out = []
     for offset in range(count):
         i = start + offset
@@ -111,11 +123,12 @@ def _parse_hourly(data, units, count=N_HOURLY):
             break
         code = int(_at(codes, i, 0) or 0)
         is_day = bool(_at(is_days, i, 1))
-        ts = _parse_iso(_at(times, i, None))
+        time_iso = _at(times, i, "") or ""
+        ts = _parse_iso(time_iso)
         clock_time = ts.strftime("%H:%M") if ts is not None else ""
         out.append(
             HourlyForecast(
-                hour_offset=offset,
+                hour_offset=offset + 1,
                 temperature=_to_float(_at(temps, i, 0.0), 0.0),
                 weather_code=code,
                 description=description_for(code),
@@ -124,9 +137,57 @@ def _parse_hourly(data, units, count=N_HOURLY):
                 precipitation_amount=_to_float(_at(precs, i, 0.0), 0.0),
                 units=units,
                 clock_time=clock_time,
+                time_iso=time_iso,
             )
         )
     return out
+
+
+def _parse_daily(data, units, count=N_DAILY):
+    d = data.get("daily", {}) or {}
+    dates = d.get("time") or []
+    if not dates:
+        return []
+    codes = d.get("weather_code") or []
+    tmaxs = d.get("temperature_2m_max") or []
+    tmins = d.get("temperature_2m_min") or []
+    pops = d.get("precipitation_probability_max") or []
+
+    today = None
+    now_str = (data.get("current", {}) or {}).get("time")
+    now = _parse_iso(now_str)
+    if now is not None:
+        today = now.date()
+
+    out = []
+    for i in range(min(count, len(dates))):
+        iso = _at(dates, i, "") or ""
+        code = int(_at(codes, i, 0) or 0)
+        out.append(
+            DailyForecast(
+                date=iso,
+                weekday_label=_weekday_label(iso, today),
+                weather_code=code,
+                description=description_for(code),
+                icon=icon_for(code, True),   # daily uses the day-variant artwork
+                temp_max=_to_float(_at(tmaxs, i, 0.0), 0.0),
+                temp_min=_to_float(_at(tmins, i, 0.0), 0.0),
+                precip_prob_max=_to_float(_at(pops, i, 0.0), 0.0),
+                units=units,
+            )
+        )
+    return out
+
+
+def _weekday_label(iso_date, today):
+    """'Today' for today's date, else a 3-letter weekday ('Mon')."""
+    try:
+        dt = date.fromisoformat(iso_date)
+    except (ValueError, TypeError):
+        return iso_date or ""
+    if today is not None and dt == today:
+        return "Today"
+    return dt.strftime("%a")
 
 
 def _current_hour_index(data, times):
