@@ -1,0 +1,9 @@
+# Line-ending policy for files consumed by the Raspberry Pi's POSIX shell.
+#
+# These MUST be checked out (and exported by `git archive`, the deploy path)
+# with LF. On a Windows dev box core.autocrlf=true would otherwise store/emit
+# CRLF, which Raspbian's `sh` cannot parse ("Syntax error: word unexpected").
+# Scoped to shell/desktop files only — the rest of the tree keeps git's default
+# handling to avoid churning unrelated legacy files.
+*.sh          text eol=lf
+*.desktop     text eol=lf
